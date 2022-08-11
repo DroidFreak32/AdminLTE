@@ -190,6 +190,7 @@ function addStaticDHCPLease($mac, $ip, $hostname, $preservehostname = false)
             $success .= '<br>DNS entry for IP '.htmlspecialchars($ip).' with hostname '
                 .htmlspecialchars($hostname).' has been added';
         }
+
         return true;
     } catch (Exception $exception) {
         $error .= $exception->getMessage();
