@@ -402,6 +402,24 @@ function initTable() {
   });
 }
 
+// Enable "filter by type" functionality, using checkboxes
+$.fn.dataTable.ext.search.push(function (settings, searchData, index, rowData) {
+  var types = $(".filter_types input:checkbox:checked")
+    .map(function () {
+      return this.value;
+    })
+    .get();
+
+  if (types.indexOf(rowData.type.toString()) !== -1) {
+    return true;
+  }
+
+  return false;
+});
+$(".filter_types input:checkbox").on("change", function () {
+  table.draw();
+});
+
 // Remove 'bnt-group' class from container, to avoid grouping
 $.fn.dataTable.Buttons.defaults.dom.container.className = "dt-buttons";
 
@@ -545,6 +563,7 @@ function addDomain() {
         wildcardEl.prop("checked", false);
         table.ajax.reload(null, false);
         table.rows().deselect();
+        domainEl.focus();
       } else {
         utils.showAlert("error", "", "Error while adding new " + domainRegex, response.message);
       }

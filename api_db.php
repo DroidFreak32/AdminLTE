@@ -8,9 +8,10 @@
 */
 
 $api = true;
+require 'scripts/pi-hole/php/password.php';
+
 header('Content-type: application/json');
 require 'scripts/pi-hole/php/database.php';
-require 'scripts/pi-hole/php/password.php';
 require 'scripts/pi-hole/php/auth.php';
 require_once 'scripts/pi-hole/php/func.php';
 check_cors();
@@ -30,16 +31,16 @@ if (isset($_GET['network']) && $auth) {
     $network = array();
     $results = $db->query('SELECT * FROM network');
 
-    while (false !== $results && $res = $results->fetchArray(SQLITE3_ASSOC)) {
+    while ($results !== false && $res = $results->fetchArray(SQLITE3_ASSOC)) {
         $id = intval($res['id']);
 
         // Get IP addresses and host names for this device
         $res['ip'] = array();
         $res['name'] = array();
         $network_addresses = $db->query("SELECT ip,name FROM network_addresses WHERE network_id = {$id} ORDER BY lastSeen DESC");
-        while (false !== $network_addresses && $network_address = $network_addresses->fetchArray(SQLITE3_ASSOC)) {
+        while ($network_addresses !== false && $network_address = $network_addresses->fetchArray(SQLITE3_ASSOC)) {
             array_push($res['ip'], $network_address['ip']);
-            if (null !== $network_address['name']) {
+            if ($network_address['name'] !== null) {
                 array_push($res['name'], utf8_encode($network_address['name']));
             } else {
                 array_push($res['name'], '');
@@ -58,7 +59,7 @@ if (isset($_GET['network']) && $auth) {
 
 if (isset($_GET['getAllQueries']) && $auth) {
     $allQueries = array();
-    if ('empty' !== $_GET['getAllQueries']) {
+    if ($_GET['getAllQueries'] !== 'empty') {
         $from = intval($_GET['from']);
         $until = intval($_GET['until']);
 
@@ -75,17 +76,18 @@ if (isset($_GET['getAllQueries']) && $auth) {
         $dbquery .= ' status, reply_type, reply_time, dnssec';
         $dbquery .= ' FROM query_storage q';
         $dbquery .= ' WHERE timestamp >= :from AND timestamp <= :until ';
-        if (isset($_GET['types'])) {
-            $types = $_GET['types'];
-            if (1 === preg_match('/^[0-9]+(?:,[0-9]+)*$/', $types)) {
+        if (isset($_GET['status'])) {
+            // if some query status should be excluded
+            $excludedStatus = $_GET['status'];
+            if (preg_match('/^[0-9]+(?:,[0-9]+)*$/', $excludedStatus) === 1) {
                 // Append selector to DB query. The used regex ensures
                 // that only numbers, separated by commas are accepted
                 // to avoid code injection and other malicious things
                 // We accept only valid lists like "1,2,3"
                 // We reject ",2,3", "1,2," and similar arguments
-                $dbquery .= 'AND status IN ('.$types.') ';
+                $dbquery .= 'AND status NOT IN ('.$excludedStatus.') ';
             } else {
-                exit('Error. Selector types specified using an invalid format.');
+                exit('Error. Selector status specified using an invalid format.');
             }
         }
         $dbquery .= 'ORDER BY timestamp ASC';
@@ -331,7 +333,7 @@ if (isset($_GET['getGraphData']) && $auth) {
             while ($row = $results->fetchArray()) {
                 // $data[timestamp] = value_in_this_interval
                 $data[$row[0]] = intval($row[1]);
-                if (-1 === $first_db_timestamp) {
+                if ($first_db_timestamp === -1) {
                     $first_db_timestamp = intval($row[0]);
                 }
             }
@@ -373,7 +375,7 @@ if (isset($_GET['getGraphData']) && $auth) {
 
 if (isset($_GET['status']) && $auth) {
     $extra = ';';
-    if (isset($_GET['ignore']) && 'DNSMASQ_WARN' === $_GET['ignore']) {
+    if (isset($_GET['ignore']) && $_GET['ignore'] === 'DNSMASQ_WARN') {
         $extra = "WHERE type != 'DNSMASQ_WARN';";
     }
     $results = $db->query('SELECT COUNT(*) FROM message '.$extra);
@@ -389,14 +391,14 @@ if (isset($_GET['status']) && $auth) {
 
 if (isset($_GET['messages']) && $auth) {
     $extra = ';';
-    if (isset($_GET['ignore']) && 'DNSMASQ_WARN' === $_GET['ignore']) {
+    if (isset($_GET['ignore']) && $_GET['ignore'] === 'DNSMASQ_WARN') {
         $extra = "WHERE type != 'DNSMASQ_WARN';";
     }
 
     $messages = array();
     $results = $db->query('SELECT * FROM message '.$extra);
 
-    while (false !== $results && $res = $results->fetchArray(SQLITE3_ASSOC)) {
+    while ($results !== false && $res = $results->fetchArray(SQLITE3_ASSOC)) {
         // Convert string to to UTF-8 encoding to ensure php-json can handle it.
         // Furthermore, convert special characters to HTML entities to prevent XSS attacks.
         foreach ($res as $key => $value) {

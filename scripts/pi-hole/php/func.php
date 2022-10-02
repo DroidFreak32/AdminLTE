@@ -12,22 +12,27 @@
 ini_set('pcre.recursion_limit', 1500);
 function validDomain($domain_name, &$message = null)
 {
+    // special handling of the root zone `.`
+    if ($domain_name == '.') {
+        return true;
+    }
+
     if (!preg_match('/^((-|_)*[a-z\\d]((-|_)*[a-z\\d])*(-|_)*)(\\.(-|_)*([a-z\\d]((-|_)*[a-z\\d])*))*$/i', $domain_name)) {
-        if (null !== $message) {
+        if ($message !== null) {
             $message = 'it contains invalid characters';
         }
 
         return false;
     }
     if (!preg_match('/^.{1,253}$/', $domain_name)) {
-        if (null !== $message) {
+        if ($message !== null) {
             $message = 'its length is invalid';
         }
 
         return false;
     }
     if (!preg_match('/^[^\\.]{1,63}(\\.[^\\.]{1,63})*$/', $domain_name)) {
-        if (null !== $message) {
+        if ($message !== null) {
             $message = 'at least one label is of invalid length';
         }
 
@@ -55,13 +60,13 @@ function validIP($address)
         return false;
     }
 
-    return false === !filter_var($address, FILTER_VALIDATE_IP);
+    return !filter_var($address, FILTER_VALIDATE_IP) === false;
 }
 
 function validCIDRIP($address)
 {
     // This validation strategy has been taken from ../js/groups-common.js
-    $isIPv6 = false !== strpos($address, ':');
+    $isIPv6 = strpos($address, ':') !== false;
     if ($isIPv6) {
         // One IPv6 element is 16bit: 0000 - FFFF
         $v6elem = '[0-9A-Fa-f]{1,4}';
@@ -83,17 +88,7 @@ function validCIDRIP($address)
 function validMAC($mac_addr)
 {
     // Accepted input format: 00:01:02:1A:5F:FF (characters may be lower case)
-    return false === !filter_var($mac_addr, FILTER_VALIDATE_MAC);
-}
-
-function validEmail($email)
-{
-    return filter_var($email, FILTER_VALIDATE_EMAIL)
-        // Make sure that the email does not contain special characters which
-        // may be used to execute shell commands, even though they may be valid
-        // in an email address. If the escaped email does not equal the original
-        // email, it is not safe to store in setupVars.
-        && escapeshellcmd($email) === $email;
+    return !filter_var($mac_addr, FILTER_VALIDATE_MAC) === false;
 }
 
 function get_ip_type($ip)
@@ -155,7 +150,7 @@ function pihole_execute($argument_string)
     $return_status = -1;
     $command = 'sudo pihole '.$escaped;
     exec($command, $output, $return_status);
-    if (0 !== $return_status) {
+    if ($return_status !== 0) {
         trigger_error("Executing {$command} failed.", E_USER_WARNING);
     }
 
@@ -190,7 +185,7 @@ function getCustomDNSEntries()
             $line = str_replace("\n", '', $line);
             $explodedLine = explode(' ', $line);
 
-            if (2 != count($explodedLine)) {
+            if (count($explodedLine) != 2) {
                 continue;
             }
 
@@ -657,4 +652,20 @@ function convertseconds($argument)
     }
 
     return sprintf('%dd %dh %dm %ds', $seconds / 86400, $seconds / 3600 % 24, $seconds / 60 % 60, $seconds % 60);
+}
+
+function start_php_session()
+{
+    // Prevent Session ID from being passed through URLs
+    ini_set('session.use_only_cookies', 1);
+    session_start();
+    // HttpOnly: Prevents javascript XSS attacks aimed to steal the session ID
+    //
+    // SameSite=Strict: Allows servers to assert that a cookie ought not to be
+    // sent along with cross-site requests. This assertion allows user agents to
+    // mitigate the risk of cross-origin information leakage, and provides some
+    // protection against cross-site request forgery attacks.
+    // Direct support of Samesite has been added to PHP only in version 7.3
+    // We manually set the cookie option ourselves to ensure backwards compatibility
+    header('Set-Cookie: PHPSESSID= '.session_id().'; path=/; HttpOnly; SameSite=Strict');
 }
