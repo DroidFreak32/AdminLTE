@@ -729,10 +729,17 @@ function doughnutTooltip(tooltipLabel) {
   // to compensate rounding errors we round to one decimal
 
   var label = " " + tooltipLabel.label;
-  // in case the item share is really small it could be rounded to 0.0
-  // we compensate for this
-  var itemPercentage =
-    tooltipLabel.parsed.toFixed(1) === 0 ? "< 0.1" : tooltipLabel.parsed.toFixed(1);
+  var itemPercentage;
+
+  // if we only show < 1% percent of all, show each item with two decimals
+  if (percentageTotalShown < 1) {
+    itemPercentage = tooltipLabel.parsed.toFixed(2);
+  } else {
+    // show with one decimal, but in case the item share is really small it could be rounded to 0.0
+    // we compensate for this
+    itemPercentage =
+      tooltipLabel.parsed.toFixed(1) === "0.0" ? "< 0.1" : tooltipLabel.parsed.toFixed(1);
+  }
 
   // even if no doughnut slice is hidden, sometimes percentageTotalShown is slightly less then 100
   // we therefore use 99.9 to decide if slices are hidden (we only show with 0.1 precision)
@@ -740,6 +747,9 @@ function doughnutTooltip(tooltipLabel) {
     // All items shown
     return label + ": " + itemPercentage + "%";
   } else {
+    // set percentageTotalShown again without rounding to account
+    // for cases where the total shown percentage would be <0.1% of all
+    percentageTotalShown = tooltipLabel.chart._metasets[0].total;
     return (
       label +
       ":<br>&bull; " +
