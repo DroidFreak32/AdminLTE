@@ -204,6 +204,7 @@ $DNSserverslist = readDNSserversList();
 
 $error = '';
 $success = '';
+$FTLrestarted = false;
 
 if (isset($_POST['field'])) {
     // Handle CSRF
@@ -452,6 +453,7 @@ if (isset($_POST['field'])) {
 
         case 'restartdns':
             pihole_execute('-a restartdns');
+            $FTLrestarted = true;
             $success = 'The DNS server has been restarted';
 
             break;
@@ -564,6 +566,7 @@ if (isset($_POST['field'])) {
 
                 if ($privacylevel > $level) {
                     pihole_execute('-a restartdns');
+                    $FTLrestarted = true;
                     $success .= 'The privacy level has been decreased and the DNS resolver has been restarted';
                 } elseif ($privacylevel < $level) {
                     $success .= 'The privacy level has been increased';
