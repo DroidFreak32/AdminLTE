@@ -9,10 +9,13 @@
 
 "use strict";
 
-const beginningOfTime = 1_262_304_000; // Jan 01 2010, 00:00 in seconds
-const endOfTime = 2_147_483_647; // Jan 19, 2038, 03:14 in seconds
-let from = beginningOfTime;
-let until = endOfTime;
+// These values are provided by the API (/info/database).
+// We initialize them as null and populate them during page init.
+let beginningOfTime = null; // seconds since epoch (set from API: info/database.earliest_timestamp)
+// endOfTime should be the end of today (local), in seconds since epoch
+const endOfTime = moment().endOf("day").unix();
+let from = null;
+let until = null;
 
 const dateformat = "MMM Do YYYY, HH:mm";
 
@@ -28,8 +31,64 @@ const filters = [
   "reply",
   "dnssec",
 ];
+let doDNSSEC = false;
+
+// Check if pihole is validiting DNSSEC
+function getDnssecConfig() {
+  $.getJSON(document.body.dataset.apiurl + "/config/dns/dnssec", data => {
+    doDNSSEC = data.config.dns.dnssec;
+
+    // redraw the table to show the icons when the API call returns
+    $("#all-queries").DataTable().draw();
+  });
+}
+
+// Fetch database info (earliest timestamp, sizes, ...) from the API and
+// initialize related globals.
+function getDatabaseInfo() {
+  $.getJSON(document.body.dataset.apiurl + "/info/database", data => {
+    // earliest_timestamp is provided in seconds since epoch
+    // We have two sources: earliest_timestamp_disk (on-disk) and earliest_timestamp (in-memory)
+    // Use whichever is smallest and non-zero
+    const diskTimestamp = Number(data.earliest_timestamp_disk);
+    const memoryTimestamp = Number(data.earliest_timestamp);
+
+    // Filter out zero/invalid timestamps
+    const validTimestamps = [diskTimestamp, memoryTimestamp].filter(ts => ts > 0);
+
+    // Use the smallest valid timestamp, or null if none exist
+    beginningOfTime = validTimestamps.length > 0 ? Math.min(...validTimestamps) : null;
+
+    // Round down to nearest 5-minute segment (300 seconds) if valid
+    if (beginningOfTime !== null) {
+      beginningOfTime = Math.floor(beginningOfTime / 300) * 300;
+    }
+
+    // If from/until were not provided via GET, default them
+    // Only use defaults if beginningOfTime is valid
+    if (beginningOfTime !== null) {
+      from ??= beginningOfTime;
+      until ??= endOfTime;
+    }
+
+    initDateRangePicker();
+  });
+}
 
 function initDateRangePicker() {
+  // If there's no valid data in the database, disable the datepicker
+  if (beginningOfTime === null) {
+    $("#querytime").prop("disabled", true);
+    $("#querytime").addClass("disabled");
+    $("#querytime-note").text("ℹ️ No data in the database");
+    return;
+  }
+
+  const minDateMoment = moment.unix(beginningOfTime);
+  const maxDateMoment = moment.unix(endOfTime);
+  const earliestDateStr = minDateMoment.format(dateformat);
+  $("#querytime-note").text(`Earliest date: ${earliestDateStr}`);
+
   $("#querytime").daterangepicker(
     {
       timePicker: true,
@@ -41,21 +100,24 @@ function initDateRangePicker() {
       ranges: {
         "Last 10 Minutes": [moment().subtract(10, "minutes"), moment()],
         "Last Hour": [moment().subtract(1, "hours"), moment()],
-        Today: [moment().startOf("day"), moment().endOf("day")],
+        Today: [moment().startOf("day"), maxDateMoment],
         Yesterday: [
           moment().subtract(1, "days").startOf("day"),
           moment().subtract(1, "days").endOf("day"),
         ],
-        "Last 7 Days": [moment().subtract(6, "days"), moment().endOf("day")],
-        "Last 30 Days": [moment().subtract(29, "days"), moment().endOf("day")],
-        "This Month": [moment().startOf("month"), moment().endOf("month")],
+        "Last 7 Days": [moment().subtract(6, "days").startOf("day"), maxDateMoment],
+        "Last 30 Days": [moment().subtract(29, "days").startOf("day"), maxDateMoment],
+        "This Month": [moment().startOf("month"), maxDateMoment],
         "Last Month": [
           moment().subtract(1, "month").startOf("month"),
           moment().subtract(1, "month").endOf("month"),
         ],
-        "This Year": [moment().startOf("year"), moment().endOf("year")],
-        "All Time": [moment(beginningOfTime * 1000), moment(endOfTime * 1000)], // convert to milliseconds since epoch
+        "This Year": [moment().startOf("year"), maxDateMoment],
+        "All Time": [minDateMoment, maxDateMoment],
       },
+      // Don't allow selecting dates outside the database range
+      minDate: minDateMoment,
+      maxDate: maxDateMoment,
       opens: "center",
       showDropdowns: true,
       autoUpdateInput: true,
@@ -345,7 +407,7 @@ function formatInfo(data) {
   if (dnssec.color !== "") {
     dnssecInfo =
       divStart +
-      'DNSSEC status:&nbsp&nbsp;<strong><span class="' +
+      'DNSSEC status:&nbsp;&nbsp;<strong><span class="' +
       dnssec.color +
       '">' +
       dnssec.text +
@@ -362,7 +424,7 @@ function formatInfo(data) {
   let replyInfo = "";
   replyInfo =
     data.reply.type !== "UNKNOWN"
-      ? divStart + "Reply:&nbsp&nbsp;" + data.reply.type + "</div>"
+      ? divStart + "Reply:&nbsp;&nbsp;" + data.reply.type + "</div>"
       : divStart + "Reply:&nbsp;&nbsp;No reply received</div>";
 
   // Show extended DNS error if applicable
@@ -480,6 +542,9 @@ function liveUpdate() {
 }
 
 $(() => {
+  // Do we want to show DNSSEC icons?
+  getDnssecConfig();
+
   // Do we want to filter queries?
   const GETDict = utils.parseQueryString();
 
@@ -496,14 +561,15 @@ $(() => {
   const apiURL = getAPIURL(GETDict);
 
   if ("from" in GETDict) {
-    from = GETDict.from;
+    from = Number(GETDict.from);
   }
 
   if ("until" in GETDict) {
-    until = GETDict.until;
+    until = Number(GETDict.until);
   }
 
-  initDateRangePicker();
+  // Fetch earliest timestamp from API and initialize date picker / table
+  getDatabaseInfo();
 
   table = $("#all-queries").DataTable({
     ajax: {
@@ -561,11 +627,13 @@ $(() => {
       utils.stateSaveCallback("query_log_table", data);
     },
     stateLoadCallback() {
-      return utils.stateLoadCallback("query_log_table");
+      const state = utils.stateLoadCallback("query_log_table");
+      // Default to 25 entries if "All" was previously selected
+      if (state) state.length = state.length === -1 ? 25 : state.length;
+      return state;
     },
     rowCallback(row, data) {
       const querystatus = parseQueryStatus(data);
-      const dnssec = parseDNSSEC(data);
 
       if (querystatus.icon !== false) {
         $("td:eq(1)", row).html(
@@ -589,14 +657,17 @@ $(() => {
 
       // Prefix colored DNSSEC icon to domain text
       let dnssecIcon = "";
-      dnssecIcon =
-        '<i class="mr-2 fa fa-fw ' +
-        dnssec.icon +
-        " " +
-        dnssec.color +
-        '" title="DNSSEC: ' +
-        dnssec.text +
-        '"></i>';
+      if (doDNSSEC === true) {
+        const dnssec = parseDNSSEC(data);
+        dnssecIcon =
+          '<i class="mr-2 fa fa-fw ' +
+          dnssec.icon +
+          " " +
+          dnssec.color +
+          '" title="DNSSEC: ' +
+          dnssec.text +
+          '"></i>';
+      }
 
       // Escape HTML in domain
       domain = dnssecIcon + utils.escapeHtml(domain);
