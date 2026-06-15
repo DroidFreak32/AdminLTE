@@ -358,7 +358,7 @@ function addClient() {
   const ips = $("#select")
     .val()
     .trim()
-    .split(/[\s,]+/)
+    .split(/[\s,]+/u)
     // Remove empty elements
     .filter(el => el !== "");
   const ipStr = JSON.stringify(ips);

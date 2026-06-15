@@ -9,11 +9,13 @@
 
 "use strict";
 
-// These values are provided by the API (/info/database).
+// These values are provided by the API
 // We initialize them as null and populate them during page init.
-let beginningOfTime = null; // seconds since epoch (set from API: info/database.earliest_timestamp)
+let beginningOfTime = null; // seconds since epoch
 // endOfTime should be the end of today (local), in seconds since epoch
 const endOfTime = moment().endOf("day").unix();
+// endOfEpoch to allow live updates to continue beyond end of day
+const endOfEpoch = 2_147_483_647; // Jan 19, 2038, 03:14 in seconds
 let from = null;
 let until = null;
 
@@ -43,39 +45,31 @@ function getDnssecConfig() {
   });
 }
 
-// Fetch database info (earliest timestamp, sizes, ...) from the API and
-// initialize related globals.
-function getDatabaseInfo() {
-  $.getJSON(document.body.dataset.apiurl + "/info/database", data => {
-    // earliest_timestamp is provided in seconds since epoch
-    // We have two sources: earliest_timestamp_disk (on-disk) and earliest_timestamp (in-memory)
-    // Use whichever is smallest and non-zero
-    const diskTimestamp = Number(data.earliest_timestamp_disk);
-    const memoryTimestamp = Number(data.earliest_timestamp);
+function initDateRangePicker(data) {
+  // earliest_timestamp is provided in seconds since epoch
+  // We have two sources: earliest_timestamp_disk (on-disk) and earliest_timestamp (in-memory)
+  // Use whichever is smallest and non-zero
+  const diskTimestamp = Number(data.earliest_timestamp_disk);
+  const memoryTimestamp = Number(data.earliest_timestamp);
 
-    // Filter out zero/invalid timestamps
-    const validTimestamps = [diskTimestamp, memoryTimestamp].filter(ts => ts > 0);
+  // Filter out zero/invalid timestamps
+  const validTimestamps = [diskTimestamp, memoryTimestamp].filter(ts => ts > 0);
 
-    // Use the smallest valid timestamp, or null if none exist
-    beginningOfTime = validTimestamps.length > 0 ? Math.min(...validTimestamps) : null;
+  // Use the smallest valid timestamp, or null if none exist
+  beginningOfTime = validTimestamps.length > 0 ? Math.min(...validTimestamps) : null;
 
-    // Round down to nearest 5-minute segment (300 seconds) if valid
-    if (beginningOfTime !== null) {
-      beginningOfTime = Math.floor(beginningOfTime / 300) * 300;
-    }
+  // Round down to nearest 5-minute segment (300 seconds) if valid
+  if (beginningOfTime !== null) {
+    beginningOfTime = Math.floor(beginningOfTime / 300) * 300;
+  }
 
-    // If from/until were not provided via GET, default them
-    // Only use defaults if beginningOfTime is valid
-    if (beginningOfTime !== null) {
-      from ??= beginningOfTime;
-      until ??= endOfTime;
-    }
+  // If from/until were not provided via GET, default them
+  // Only use defaults if beginningOfTime is valid
+  if (beginningOfTime !== null) {
+    from ??= beginningOfTime;
+    until ??= endOfTime;
+  }
 
-    initDateRangePicker();
-  });
-}
-
-function initDateRangePicker() {
   // If there's no valid data in the database, disable the datepicker
   if (beginningOfTime === null) {
     $("#querytime").prop("disabled", true);
@@ -165,7 +159,7 @@ function parseQueryStatus(data) {
       icon = "fa-solid fa-cloud-download-alt";
       fieldtext =
         (data.reply.type !== "UNKNOWN" ? "Forwarded, reply from " : "Forwarded to ") +
-        data.upstream;
+        utils.escapeHtml(data.upstream);
       buttontext =
         '<button type="button" class="btn btn-default btn-sm text-red btn-blacklist"><i class="fa fa-ban"></i> Deny</button>';
       break;
@@ -276,14 +270,14 @@ function parseQueryStatus(data) {
     case "SPECIAL_DOMAIN":
       colorClass = "text-red";
       icon = "fa-solid fa-ban";
-      fieldtext = data.status;
+      fieldtext = utils.escapeHtml(data.status);
       buttontext = "";
       blocked = true;
       break;
     default:
       colorClass = "text-orange";
       icon = "fa-solid fa-question";
-      fieldtext = data.status;
+      fieldtext = utils.escapeHtml(data.status);
       buttontext = "";
   }
 
@@ -380,7 +374,10 @@ function formatInfo(data) {
   let cnameInfo = "";
   if (queryStatus.isCNAME) {
     cnameInfo =
-      divStart + "Query was blocked during CNAME inspection of&nbsp;&nbsp;" + data.cname + "</div>";
+      divStart +
+      "Query was blocked during CNAME inspection of&nbsp;&nbsp;" +
+      utils.escapeHtml(data.cname) +
+      "</div>";
   }
 
   // Show TTL if applicable
@@ -398,8 +395,8 @@ function formatInfo(data) {
   // Show client information, show hostname only if available
   const ipInfo =
     data.client.name !== null && data.client.name.length > 0
-      ? utils.escapeHtml(data.client.name) + " (" + data.client.ip + ")"
-      : data.client.ip;
+      ? utils.escapeHtml(data.client.name) + " (" + utils.escapeHtml(data.client.ip) + ")"
+      : utils.escapeHtml(data.client.ip);
   const clientInfo = divStart + "Client:&nbsp;&nbsp;<strong>" + ipInfo + "</strong></div>";
 
   // Show DNSSEC status if applicable
@@ -424,7 +421,7 @@ function formatInfo(data) {
   let replyInfo = "";
   replyInfo =
     data.reply.type !== "UNKNOWN"
-      ? divStart + "Reply:&nbsp;&nbsp;" + data.reply.type + "</div>"
+      ? divStart + `Reply:&nbsp;&nbsp;${utils.escapeHtml(data.reply.type)}</div>`
       : divStart + "Reply:&nbsp;&nbsp;No reply received</div>";
 
   // Show extended DNS error if applicable
@@ -435,7 +432,7 @@ function formatInfo(data) {
       edeInfo += ' class="' + dnssec.color + '"';
     }
 
-    edeInfo += ">" + data.ede.text + "</strong></div>";
+    edeInfo += ">" + utils.escapeHtml(data.ede.text) + "</strong></div>";
   }
 
   // Compile extra info for displaying
@@ -532,6 +529,7 @@ let liveMode = false;
 $("#live").prop("checked", liveMode);
 $("#live").on("click", function () {
   liveMode = $(this).prop("checked");
+  until = endOfEpoch; // allow live updates to continue indefinitely
   liveUpdate();
 });
 
@@ -568,9 +566,6 @@ $(() => {
     until = Number(GETDict.until);
   }
 
-  // Fetch earliest timestamp from API and initialize date picker / table
-  getDatabaseInfo();
-
   table = $("#all-queries").DataTable({
     ajax: {
       url: apiURL,
@@ -582,6 +577,12 @@ $(() => {
       dataFilter(d) {
         const json = JSON.parse(d);
         cursor = json.cursor; // Extract cursor from original data
+
+        // Initialize the date picker (if not already done)
+        if (beginningOfTime === null) {
+          initDateRangePicker(json);
+        }
+
         if (liveMode) {
           utils.setTimer(liveUpdate, REFRESH_INTERVAL.query_log);
         }
@@ -642,7 +643,7 @@ $(() => {
             " " +
             querystatus.colorClass +
             "' title='" +
-            utils.escapeHtml(querystatus.fieldtext) +
+            querystatus.fieldtext +
             "'></i>"
         );
       } else if (querystatus.colorClass !== false) {

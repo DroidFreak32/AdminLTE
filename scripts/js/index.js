@@ -167,7 +167,7 @@ function updateClientsOverTime() {
     const clients = {};
     for (const [ip, clientData] of Object.entries(data.clients)) {
       clients[ip] = numClients++;
-      labels.push(clientData.name !== null ? clientData.name : ip);
+      labels.push(clientData.name !== null ? utils.escapeHtml(clientData.name) : ip);
     }
 
     // Remove possibly already existing data
@@ -647,7 +647,7 @@ $(() => {
           callbacks: {
             title(tooltipTitle) {
               const label = tooltipTitle[0].label;
-              const time = label.match(/(\d?\d):?(\d?\d?)/);
+              const time = label.match(/(\d?\d):?(\d?\d?)/u);
               const h = Number.parseInt(time[1], 10);
               const m = Number.parseInt(time[2], 10) || 0;
               const from = utils.padNumber(h) + ":" + utils.padNumber(m - 5) + ":00";
@@ -751,7 +751,7 @@ $(() => {
             callbacks: {
               title(tooltipTitle) {
                 const label = tooltipTitle[0].label;
-                const time = label.match(/(\d?\d):?(\d?\d?)/);
+                const time = label.match(/(\d?\d):?(\d?\d?)/u);
                 const h = Number.parseInt(time[1], 10);
                 const m = Number.parseInt(time[2], 10) || 0;
                 const from = utils.padNumber(h) + ":" + utils.padNumber(m - 5) + ":00";

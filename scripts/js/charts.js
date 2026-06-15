@@ -5,7 +5,7 @@
  *  This file is copyright under the latest version of the EUPL.
  *  Please see LICENSE file for your rights under this license. */
 
-/* global upstreamIPs:false */
+/* global upstreamIPs:false, utils:false */
 
 "use strict";
 
@@ -211,7 +211,7 @@ function setTooltipContent(tooltipEl, tooltip) {
   let tooltipHtml = "<thead>";
 
   for (const title of titleLines) {
-    tooltipHtml += `<tr><th>${title}</th></tr>`;
+    tooltipHtml += `<tr><th>${utils.escapeHtml(title)}</th></tr>`;
   }
 
   tooltipHtml += "</thead><tbody>";
@@ -377,7 +377,7 @@ globalThis.doughnutTooltip = tooltipLabel => {
   // tooltipLabel.chart._metasets[0].total returns the total percentage of the shown slices
   // to compensate rounding errors we round to one decimal
   let percentageTotalShown = tooltipLabel.chart._metasets[0].total.toFixed(1);
-  const label = ` ${tooltipLabel.label}`;
+  const label = ` ${utils.escapeHtml(tooltipLabel.label)}`;
   let itemPercentage;
 
   // if we only show < 1% percent of all, show each item with two decimals
